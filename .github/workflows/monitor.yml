@@ -1,0 +1,39 @@
+name: Olympic Medal Monitor
+
+on:
+  schedule:
+    # 한국 시간 17:00 ~ 23:00 (매시간)
+    - cron: '0 8-14 * * *'
+    # 한국 시간 06:00 (최종 확인)
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-monitor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 파일 쓰기 권한 허용
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: pip install requests
+        
+      - name: Run Script
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python monitor.py
+        
+      - name: Commit and Push
+        run: |
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add last_state.json
+          git commit -m "Update state: $(date)" || exit 0
+          git push
