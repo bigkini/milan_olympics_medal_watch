@@ -10,7 +10,7 @@ CHAT_ID = os.environ.get('CHAT_ID')
 ATHLETES_URL = "https://scd.dgplatform.net/wmr-owg2026/competition/api/ENG/medallists"
 MEDALS_URL = "https://scd.dgplatform.net/wmr-owg2026/competition/api/ENG/medals"
 
-# kini 님의 마스터 헤더
+# kini 님의 마스터 헤더 (모든 요청에 필수 적용)
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
@@ -28,6 +28,9 @@ def send_telegram(message):
         print(f"텔레그램 전송 실패: {e}")
 
 def format_medal_table(title, medal_data):
+    if not medal_data:
+        return f"📊 *{title}*\n데이터를 불러올 수 없습니다."
+    
     table = f"📊 *{title}*\n"
     table += "`NOC | 금 | 은 | 동 | 합계`\n"
     table += "---------------------------\n"
@@ -37,7 +40,7 @@ def format_medal_table(title, medal_data):
 
 def monitor():
     try:
-        # 데이터 수집
+        # 두 API 요청 모두에 HEADERS를 확실히 적용
         res_athletes = requests.get(ATHLETES_URL, headers=HEADERS, timeout=30)
         res_medals = requests.get(MEDALS_URL, headers=HEADERS, timeout=30)
         
@@ -64,12 +67,9 @@ def monitor():
 
     # --- 3. 메시지 구성 ---
     report = []
-    
-    # [국가 순위 섹션]
     report.append(format_medal_table("금메달 순위 (TOP 5)", sort_gold))
     report.append(format_medal_table("합계 순위 (TOP 5)", sort_total))
     
-    # [선수 기록 섹션]
     athlete_msg = "👤 *선수 기록 업데이트*\n"
     athlete_msg += f"🥇 최다 금메달: {current_max_gold}개\n({', '.join(current_top_names)})\n"
     athlete_msg += f"🎿 클레보(KLAEBO): 금 {current_klaebo_gold}개"
@@ -78,7 +78,7 @@ def monitor():
     # 텔레그램 전송
     send_telegram("\n\n".join(report))
 
-    # --- 4. 상태 업데이트 (last_state.json 기록용) ---
+    # --- 4. 상태 업데이트 ---
     with open('last_state.json', 'w', encoding='utf-8') as f:
         json.dump({
             "max_gold": current_max_gold,
