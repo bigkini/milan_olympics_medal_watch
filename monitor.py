@@ -10,7 +10,7 @@ CHAT_ID = os.environ.get('CHAT_ID')
 ATHLETES_URL = "https://scd.dgplatform.net/wmr-owg2026/competition/api/ENG/medallists"
 MEDALS_URL = "https://scd.dgplatform.net/wmr-owg2026/competition/api/ENG/medals"
 
-# kini 님의 마스터 헤더 (모든 요청에 필수 적용)
+# kini 님의 마스터 헤더
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
@@ -35,12 +35,19 @@ def format_medal_table(title, medal_data):
     table += "`NOC | 금 | 은 | 동 | 합계`\n"
     table += "---------------------------\n"
     for i, m in enumerate(medal_data[:5]):
-        table += f"{i+1}. {m['organisation']} | {m['gold']} | {m['silver']} | {m['bronze']} | {m['total']}\n"
+        # medalsNumber에서 'Total' 타입을 찾아 데이터 추출
+        total_data = next((item for item in m.get('medalsNumber', []) if item['type'] == 'Total'), {})
+        noc = m.get('organisation', 'N/A')
+        gold = total_data.get('gold', 0)
+        silver = total_data.get('silver', 0)
+        bronze = total_data.get('bronze', 0)
+        total = total_data.get('total', 0)
+        
+        table += f"{i+1}. {noc} | {gold} | {silver} | {bronze} | {total}\n"
     return table
 
 def monitor():
     try:
-        # 두 API 요청 모두에 HEADERS를 확실히 적용
         res_athletes = requests.get(ATHLETES_URL, headers=HEADERS, timeout=30)
         res_medals = requests.get(MEDALS_URL, headers=HEADERS, timeout=30)
         
@@ -50,12 +57,30 @@ def monitor():
         print(f"데이터 로드 실패: {e}")
         return
 
-    # --- 1. 국가별 순위 분석 ---
-    medal_list = data_medals.get('medals', [])
+    # --- 1. 국가별 순위 분석 (구조에 맞게 수정) ---
+    # 제공해주신 JSON 구조: data_medals['medalStandings']['medalsTable']
+    medal_list = data_medals.get('medalStandings', {}).get('medalsTable', [])
+
+    def get_total_stats(entry):
+        total_info = next((item for item in entry.get('medalsNumber', []) if item['type'] == 'Total'), {})
+        return {
+            'gold': total_info.get('gold', 0),
+            'silver': total_info.get('silver', 0),
+            'bronze': total_info.get('bronze', 0),
+            'total': total_info.get('total', 0)
+        }
+
+    # 정렬을 위해 각 국가 데이터에 total_stats 매핑
+    processed_medals = []
+    for m in medal_list:
+        stats = get_total_stats(m)
+        m.update(stats) # 정렬 편의를 위해 필드 주입
+        processed_medals.append(m)
+
     # 금메달순 정렬 (금 > 은 > 동)
-    sort_gold = sorted(medal_list, key=lambda x: (-x['gold'], -x['silver'], -x['bronze']))
+    sort_gold = sorted(processed_medals, key=lambda x: (-x['gold'], -x['silver'], -x['bronze']))
     # 합계순 정렬 (합계 > 금)
-    sort_total = sorted(medal_list, key=lambda x: (-x['total'], -x['gold']))
+    sort_total = sorted(processed_medals, key=lambda x: (-x['total'], -x['gold']))
 
     # --- 2. 선수별 기록 분석 ---
     athletes = data_athletes.get('athletes', [])
