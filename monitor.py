@@ -28,7 +28,7 @@ def send_telegram(message):
         print(f"텔레그램 전송 실패: {e}")
 
 def format_medal_table(title, sorted_list):
-    """TOP 5와 특정 국가(KOR, JPN)를 포함한 테이블 생성"""
+    """TOP 5와 KOR, JPN을 순위순으로 포함한 테이블 생성"""
     if not sorted_list:
         return f"📊 *{title}*\n데이터를 불러올 수 없습니다."
     
@@ -41,22 +41,23 @@ def format_medal_table(title, sorted_list):
     for i, m in enumerate(top5):
         table += f"{i+1}. {m['organisation']} | {m['gold']} | {m['silver']} | {m['bronze']} | {m['total']}\n"
     
-    # 2. KOR, JPN 추가 (TOP 5에 없을 경우에만)
-    extra_codes = ['KOR', 'JPN']
+    # 2. KOR, JPN 추출 및 순위순 정렬
+    target_codes = ['KOR', 'JPN']
     top5_codes = [m['organisation'] for m in top5]
     
-    extra_rows = []
-    for code in extra_codes:
-        if code not in top5_codes:
-            # 전체 리스트에서 해당 국가 찾기
-            for idx, m in enumerate(sorted_list):
-                if m['organisation'] == code:
-                    extra_rows.append(f"{idx+1}. {m['organisation']} | {m['gold']} | {m['silver']} | {m['bronze']} | {m['total']}")
-                    break
+    # TOP 5에 없는 대상 국가들을 찾아 현재 순위와 함께 리스트화
+    extra_targets = []
+    for idx, m in enumerate(sorted_list):
+        if m['organisation'] in target_codes and m['organisation'] not in top5_codes:
+            extra_targets.append((idx + 1, m))
     
-    if extra_rows:
+    # 대상 국가들끼리도 순위(idx)에 따라 정렬 (순위가 높은 나라가 먼저 오도록)
+    extra_targets.sort(key=lambda x: x[0])
+    
+    if extra_targets:
         table += "...\n"
-        table += "\n".join(extra_rows) + "\n"
+        for rank, m in extra_targets:
+            table += f"{rank}. {m['organisation']} | {m['gold']} | {m['silver']} | {m['bronze']} | {m['total']}\n"
         
     return table
 
@@ -85,9 +86,9 @@ def monitor():
             'total': total_info.get('total', 0)
         })
 
-    # 금메달순 정렬
+    # 금메달순 정렬 (금 > 은 > 동)
     sort_gold = sorted(processed_medals, key=lambda x: (-x['gold'], -x['silver'], -x['bronze']))
-    # 합계순 정렬
+    # 합계순 정렬 (합계 > 금)
     sort_total = sorted(processed_medals, key=lambda x: (-x['total'], -x['gold']))
 
     # --- 2. 선수별 기록 분석 ---
