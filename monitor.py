@@ -27,23 +27,37 @@ def send_telegram(message):
     except Exception as e:
         print(f"텔레그램 전송 실패: {e}")
 
-def format_medal_table(title, medal_data):
-    if not medal_data:
+def format_medal_table(title, sorted_list):
+    """TOP 5와 특정 국가(KOR, JPN)를 포함한 테이블 생성"""
+    if not sorted_list:
         return f"📊 *{title}*\n데이터를 불러올 수 없습니다."
     
     table = f"📊 *{title}*\n"
-    table += "`NOC | 금 | 은 | 동 | 합계`\n"
+    table += "`순위. NOC | 금 | 은 | 동 | 합계`\n"
     table += "---------------------------\n"
-    for i, m in enumerate(medal_data[:5]):
-        # medalsNumber에서 'Total' 타입을 찾아 데이터 추출
-        total_data = next((item for item in m.get('medalsNumber', []) if item['type'] == 'Total'), {})
-        noc = m.get('organisation', 'N/A')
-        gold = total_data.get('gold', 0)
-        silver = total_data.get('silver', 0)
-        bronze = total_data.get('bronze', 0)
-        total = total_data.get('total', 0)
+    
+    # 1. TOP 5 출력
+    top5 = sorted_list[:5]
+    for i, m in enumerate(top5):
+        table += f"{i+1}. {m['organisation']} | {m['gold']} | {m['silver']} | {m['bronze']} | {m['total']}\n"
+    
+    # 2. KOR, JPN 추가 (TOP 5에 없을 경우에만)
+    extra_codes = ['KOR', 'JPN']
+    top5_codes = [m['organisation'] for m in top5]
+    
+    extra_rows = []
+    for code in extra_codes:
+        if code not in top5_codes:
+            # 전체 리스트에서 해당 국가 찾기
+            for idx, m in enumerate(sorted_list):
+                if m['organisation'] == code:
+                    extra_rows.append(f"{idx+1}. {m['organisation']} | {m['gold']} | {m['silver']} | {m['bronze']} | {m['total']}")
+                    break
+    
+    if extra_rows:
+        table += "...\n"
+        table += "\n".join(extra_rows) + "\n"
         
-        table += f"{i+1}. {noc} | {gold} | {silver} | {bronze} | {total}\n"
     return table
 
 def monitor():
@@ -57,29 +71,23 @@ def monitor():
         print(f"데이터 로드 실패: {e}")
         return
 
-    # --- 1. 국가별 순위 분석 (구조에 맞게 수정) ---
-    # 제공해주신 JSON 구조: data_medals['medalStandings']['medalsTable']
-    medal_list = data_medals.get('medalStandings', {}).get('medalsTable', [])
-
-    def get_total_stats(entry):
+    # --- 1. 국가별 순위 데이터 파싱 ---
+    medal_table = data_medals.get('medalStandings', {}).get('medalsTable', [])
+    processed_medals = []
+    
+    for entry in medal_table:
         total_info = next((item for item in entry.get('medalsNumber', []) if item['type'] == 'Total'), {})
-        return {
+        processed_medals.append({
+            'organisation': entry.get('organisation'),
             'gold': total_info.get('gold', 0),
             'silver': total_info.get('silver', 0),
             'bronze': total_info.get('bronze', 0),
             'total': total_info.get('total', 0)
-        }
+        })
 
-    # 정렬을 위해 각 국가 데이터에 total_stats 매핑
-    processed_medals = []
-    for m in medal_list:
-        stats = get_total_stats(m)
-        m.update(stats) # 정렬 편의를 위해 필드 주입
-        processed_medals.append(m)
-
-    # 금메달순 정렬 (금 > 은 > 동)
+    # 금메달순 정렬
     sort_gold = sorted(processed_medals, key=lambda x: (-x['gold'], -x['silver'], -x['bronze']))
-    # 합계순 정렬 (합계 > 금)
+    # 합계순 정렬
     sort_total = sorted(processed_medals, key=lambda x: (-x['total'], -x['gold']))
 
     # --- 2. 선수별 기록 분석 ---
@@ -90,20 +98,19 @@ def monitor():
     klaebo = next((a for a in athletes if "KLAEBO" in a['fullName']), None)
     current_klaebo_gold = klaebo['medalsGold'] if klaebo else 0
 
-    # --- 3. 메시지 구성 ---
+    # --- 3. 리포트 생성 ---
     report = []
-    report.append(format_medal_table("금메달 순위 (TOP 5)", sort_gold))
-    report.append(format_medal_table("합계 순위 (TOP 5)", sort_total))
+    report.append(format_medal_table("금메달 순위 (TOP 5 + α)", sort_gold))
+    report.append(format_medal_table("합계 순위 (TOP 5 + α)", sort_total))
     
     athlete_msg = "👤 *선수 기록 업데이트*\n"
     athlete_msg += f"🥇 최다 금메달: {current_max_gold}개\n({', '.join(current_top_names)})\n"
     athlete_msg += f"🎿 클레보(KLAEBO): 금 {current_klaebo_gold}개"
     report.append(athlete_msg)
 
-    # 텔레그램 전송
     send_telegram("\n\n".join(report))
 
-    # --- 4. 상태 업데이트 ---
+    # --- 4. 상태 저장 ---
     with open('last_state.json', 'w', encoding='utf-8') as f:
         json.dump({
             "max_gold": current_max_gold,
