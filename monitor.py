@@ -28,6 +28,7 @@ def send_telegram(message):
         print(f"텔레그램 전송 실패: {e}")
 
 def format_medal_table(title, sorted_list):
+    """TOP 5와 KOR, JPN을 순위순으로 포함한 테이블 생성"""
     if not sorted_list:
         return f"📊 *{title}*\n데이터를 불러올 수 없습니다."
     
@@ -41,7 +42,6 @@ def format_medal_table(title, sorted_list):
     
     target_codes = ['KOR', 'JPN']
     top5_codes = [m['organisation'] for m in top5]
-    
     extra_targets = []
     for idx, m in enumerate(sorted_list):
         if m['organisation'] in target_codes and m['organisation'] not in top5_codes:
@@ -53,7 +53,6 @@ def format_medal_table(title, sorted_list):
         table += "...\n"
         for rank, m in extra_targets:
             table += f"{rank}. {m['organisation']} | {m['gold']} | {m['silver']} | {m['bronze']} | {m['total']}\n"
-        
     return table
 
 def monitor():
@@ -67,7 +66,7 @@ def monitor():
         print(f"데이터 로드 실패: {e}")
         return
 
-    # --- 1. 국가별 순위 분석 ---
+    # 1. 국가별 순위 분석
     medal_table = data_medals.get('medalStandings', {}).get('medalsTable', [])
     processed_medals = []
     for entry in medal_table:
@@ -82,18 +81,23 @@ def monitor():
     sort_gold = sorted(processed_medals, key=lambda x: (-x['gold'], -x['silver'], -x['bronze']))
     sort_total = sorted(processed_medals, key=lambda x: (-x['total'], -x['gold']))
 
-    # --- 2. 선수별 기록 분석 ---
+    # 2. 선수별 기록 분석 (tvName 기준)
     athletes = data_athletes.get('athletes', [])
-    max_gold = max(a['medalsGold'] for a in athletes) if athletes else 0
-    top_tv_names = sorted([a['tvName'] for a in athletes if a['medalsGold'] == max_gold])
+    max_gold_val = max(a['medalsGold'] for a in athletes) if athletes else 0
+    top_tv_names = sorted([a['tvName'] for a in athletes if a['medalsGold'] == max_gold_val])
     
-    klaebo = next((a for a in athletes if "KLAEBO" in a['fullName']), None)
-    if klaebo:
-        klaebo_info = f"🎿 *KLAEBO*: 금 {klaebo['medalsGold']} | 은 {klaebo['medalsSilver']} | 동 {klaebo['medalsBronze']} (합 {klaebo['medalsTotal']})"
+    # 클레보(KLAEBO) 신기록 추적 로직
+    claebo = next((a for a in athletes if "KLAEBO" in a['fullName']), None)
+    if claebo:
+        kg, ks, kb, kt = claebo['medalsGold'], claebo['medalsSilver'], claebo['medalsBronze'], claebo['medalsTotal']
+        record_label = ""
+        if kg == 4: record_label = " 🎖 *[New Record!]*"
+        elif kg > 4: record_label = f" 🎖 *[New Record +{kg - 4}]*"
+        claebo_info = f"🎿 *KLAEBO*: 금 {kg}{record_label} | 은 {ks} | 동 {kb} (합 {kt})"
     else:
-        klaebo_info = "🎿 *KLAEBO*: 정보 없음"
+        claebo_info = "🎿 *KLAEBO*: 정보 없음"
 
-    # --- 3. 대한민국 메달리스트 상세 (날짜 역순 정렬) ---
+    # 3. 대한민국 메달리스트 상세 (최신 날짜순 정렬)
     kor_medals = []
     for a in [at for at in athletes if at['organisation'] == 'KOR']:
         for m in a.get('medals', []):
@@ -104,8 +108,6 @@ def monitor():
                 'type': m['medalType'].replace('ME_', '').title(),
                 'date': m.get('date', '0000-00-00')
             })
-    
-    # 날짜(date) 기준으로 내림차순 정렬 (새로운 메달이 앞)
     kor_medals.sort(key=lambda x: x['date'], reverse=True)
 
     kor_summary = "🇰🇷 *대한민국 메달리스트 상세*\n"
@@ -115,24 +117,20 @@ def monitor():
     else:
         kor_summary += "획득한 메달이 없습니다."
 
-    # --- 4. 리포트 생성 ---
-    report = []
-    report.append(format_medal_table("금메달 순위 (TOP 5 + α)", sort_gold))
-    report.append(format_medal_table("합계 순위 (TOP 5 + α)", sort_total))
-    
-    athlete_msg = "👤 *주요 선수 기록*\n"
-    athlete_msg += f"🥇 최다 금메달 ({max_gold}개): {', '.join(top_tv_names)}\n"
-    athlete_msg += klaebo_info
-    report.append(athlete_msg)
-    report.append(kor_summary)
-
+    # 4. 리포트 생성 및 전송
+    report = [
+        format_medal_table("금메달 순위 (TOP 5 + α)", sort_gold),
+        format_medal_table("합계 순위 (TOP 5 + α)", sort_total),
+        f"👤 *주요 선수 기록*\n🥇 최다 금메달 ({max_gold_val}개): {', '.join(top_tv_names)}\n{claebo_info}",
+        kor_summary
+    ]
     send_telegram("\n\n".join(report))
 
-    # --- 5. 상태 저장 ---
+    # 5. 상태 저장 (기존 필드 유지)
     with open('last_state.json', 'w', encoding='utf-8') as f:
         json.dump({
-            "max_gold": max_gold,
-            "klaebo_gold": klaebo['medalsGold'] if klaebo else 0,
+            "max_gold": max_gold_val,
+            "klaebo_gold": claebo['medalsGold'] if claebo else 0,
             "top_names": top_tv_names
         }, f, ensure_ascii=False, indent=4)
 
