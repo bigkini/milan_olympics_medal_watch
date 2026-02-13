@@ -87,27 +87,31 @@ def monitor():
     max_gold = max(a['medalsGold'] for a in athletes) if athletes else 0
     top_tv_names = sorted([a['tvName'] for a in athletes if a['medalsGold'] == max_gold])
     
-    # 클레보(KLAEBO) 메달 상세 정보
     klaebo = next((a for a in athletes if "KLAEBO" in a['fullName']), None)
     if klaebo:
-        klaebo_gold = klaebo['medalsGold']
-        klaebo_silver = klaebo['medalsSilver']
-        klaebo_bronze = klaebo['medalsBronze']
-        klaebo_total = klaebo['medalsTotal']
-        klaebo_info = f"🎿 *KLAEBO*: 금 {klaebo_gold} | 은 {klaebo_silver} | 동 {klaebo_bronze} (합계 {klaebo_total})"
+        klaebo_info = f"🎿 *KLAEBO*: 금 {klaebo['medalsGold']} | 은 {klaebo['medalsSilver']} | 동 {klaebo['medalsBronze']} (합 {klaebo['medalsTotal']})"
     else:
         klaebo_info = "🎿 *KLAEBO*: 정보 없음"
 
-    # --- 3. 대한민국 메달리스트 상세 ---
-    kor_athletes = [a for a in athletes if a['organisation'] == 'KOR']
+    # --- 3. 대한민국 메달리스트 상세 (날짜 역순 정렬) ---
+    kor_medals = []
+    for a in [at for at in athletes if at['organisation'] == 'KOR']:
+        for m in a.get('medals', []):
+            kor_medals.append({
+                'tvName': a['tvName'],
+                'sport': m.get('disciplineName', 'N/A'),
+                'event': m.get('eventName', 'N/A'),
+                'type': m['medalType'].replace('ME_', '').title(),
+                'date': m.get('date', '0000-00-00')
+            })
+    
+    # 날짜(date) 기준으로 내림차순 정렬 (새로운 메달이 앞)
+    kor_medals.sort(key=lambda x: x['date'], reverse=True)
+
     kor_summary = "🇰🇷 *대한민국 메달리스트 상세*\n"
-    if kor_athletes:
-        for a in kor_athletes:
-            for m in a.get('medals', []):
-                m_sport = m.get('disciplineName', 'N/A')
-                m_event = m.get('eventName', 'N/A')
-                m_type = m['medalType'].replace('ME_', '').title()
-                kor_summary += f"• {a['tvName']} | {m_sport} - {m_event} | {m_type}\n"
+    if kor_medals:
+        for km in kor_medals:
+            kor_summary += f"• [{km['date']}] {km['tvName']} | {km['sport']} - {km['event']} | {km['type']}\n"
     else:
         kor_summary += "획득한 메달이 없습니다."
 
